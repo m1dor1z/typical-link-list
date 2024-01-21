@@ -1,81 +1,65 @@
-use std::{rc::Rc};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct List<T> {
-    head: Link<T>
+    head: Link<T>,
+    tail: Link<T>
 }
 
-type Link<T> = Option<Rc<Node<T>>>;
+type Link<T> = Option<Rc<RefCell<Node<T>>>>;
 
 #[derive(Debug)]
 pub struct Node<T> {
     payload: T,
-    next: Link<T>
+    next: Link<T>,
+    prev: Link<T>
 }
 
 impl<T> Node<T> {
-    pub fn new(payload: T, next: Link<T>) -> Self {
-        Node {
-            payload,
-            next: None
-        }
+    fn new(payload: T) -> Rc<RefCell<Self>> {
+        let node = Node { payload, next: None, prev: None };
+        Rc::new(RefCell::new(node))
     }
 }
 
-impl<T> List<T> {
-    pub fn new() -> Self {
-        List { head: None }
+impl<T: std::fmt::Debug> List<T> {
+    fn new() -> Self {
+        List { head: None, tail: None }
     }
 
-    pub fn prepend(&self, payload: T) -> List<T> {
-        List { 
-            head: Some(Rc::new(Node {
-                payload,
-                next: self.head.clone()
-            }))
-        }
-    }
-
-    pub fn tail(&self) -> List<T> {
-        List { head: self.head.as_ref().and_then(|node| node.next.clone()) }
-    }
-
-    pub fn head(&self) -> Option<&T> {
-        self.head.as_deref().map(|node| &node.payload)
-    }
-
-    pub fn iter(&self) -> Iter<'_, T> {
-        Iter { next: self.head.as_deref() }
-    }
-}
-
-impl<T> Drop for List<T> {
-    fn drop(&mut self) {
-        let mut head = self.head.take();
-
-        while let Some(node) = head {
-            if let Ok(mut node) = Rc::try_unwrap(node) {
-                head = node.next.take();
-            } else {
-                break;
+    fn push_front(&mut self, payload: T) {
+        let new_head = Node::new(payload);
+        match self.head.take() {
+            Some(old_head) => {
+                old_head.borrow_mut().prev = Some(new_head.clone());
+                new_head.borrow_mut().next = Some(old_head);
+                self.head = Some(new_head);
+            }
+            None => {
+                self.tail = Some(new_head.clone());
+                self.head = Some(new_head);
             }
         }
     }
-}
 
-pub struct Iter<'a, T> {
-    next: Option<&'a Node<T>>
-}
-
-impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a T;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next.map(|node| {
-            self.next = node.next.as_deref();
-            &node.payload
+    fn pop_front(&mut self) -> Option<T> {
+        self.head.take().map(|old_head| {
+            match old_head.borrow_mut().next.take() {
+                Some(new_head) => {
+                    // println!("-> {:?}", &new_head);
+                    new_head.borrow_mut().prev.take();
+                    self.head = Some(new_head);
+                }
+                None => {
+                    self.tail.take();
+                }
+            }
+            Rc::try_unwrap(old_head).unwrap().into_inner().payload
         })
     }
 }
+
 
 #[cfg(test)]
 mod test {
@@ -83,33 +67,30 @@ mod test {
 
     #[test]
     fn basics() {
-        let list = List::new();
-        assert_eq!(list.head(), None);
+        let mut list = List::new();
 
-        let list = list.prepend(1).prepend(2).prepend(3);
-        assert_eq!(list.head(), Some(&3));
+        // Check empty list behaves right
+        assert_eq!(list.pop_front(), None);
 
-        let list = list.tail();
-        assert_eq!(list.head(), Some(&2));
+        // Populate list
+        list.push_front(1);
+        list.push_front(2);
+        list.push_front(3);
 
-        let list = list.tail();
-        assert_eq!(list.head(), Some(&1));
+        // Check normal removal
+        assert_eq!(list.pop_front(), Some(3));
+        assert_eq!(list.pop_front(), Some(2));
 
-        let list = list.tail();
-        assert_eq!(list.head(), None);
+        // Push some more just to make sure nothing's corrupted
+        list.push_front(4);
+        list.push_front(5);
 
-        // Make sure empty tail works
-        let list = list.tail();
-        assert_eq!(list.head(), None);
-    }
+        // Check normal removal
+        assert_eq!(list.pop_front(), Some(5));
+        assert_eq!(list.pop_front(), Some(4));
 
-    #[test]
-    fn iter() {
-        let list = List::new().prepend(1).prepend(2).prepend(3);
-
-        let mut iter = list.iter();
-        assert_eq!(iter.next(), Some(&3));
-        assert_eq!(iter.next(), Some(&2));
-        assert_eq!(iter.next(), Some(&1));
+        // Check exhaustion
+        assert_eq!(list.pop_front(), Some(1));
+        assert_eq!(list.pop_front(), None);
     }
 }
