@@ -1,6 +1,5 @@
-use std::rc::Rc;
+use std::{rc::Rc};
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct List<T> {
     head: Link<T>
@@ -8,7 +7,6 @@ pub struct List<T> {
 
 type Link<T> = Option<Rc<Node<T>>>;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Node<T> {
     payload: T,
@@ -16,54 +14,45 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
-    fn new(payload: T, next: Link<T>) -> Self {
-        Node { payload, next }
+    pub fn new(payload: T, next: Link<T>) -> Self {
+        Node {
+            payload,
+            next: None
+        }
     }
 }
 
 impl<T> List<T> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         List { head: None }
     }
 
-    fn prepend(&self, payload: T) -> List<T> {
+    pub fn prepend(&self, payload: T) -> List<T> {
         List { 
-            head: Some(Rc::new(Node::new(payload, self.head.clone())))
+            head: Some(Rc::new(Node {
+                payload,
+                next: self.head.clone()
+            }))
         }
     }
 
-    fn tail(&self) -> List<T> {
-        List { 
-            head: self.head.as_ref().and_then(|node| node.next.clone()) 
-        }
+    pub fn tail(&self) -> List<T> {
+        List { head: self.head.as_ref().and_then(|node| node.next.clone()) }
     }
 
-    fn head(&self) -> Option<&T> {
-        self.head.as_ref().map(|node| &node.payload)
+    pub fn head(&self) -> Option<&T> {
+        self.head.as_deref().map(|node| &node.payload)
     }
 
-    fn into_iter(&self) -> IterBorrow<'_, T> {
-        IterBorrow { next: self.head.as_deref() }
-    }
-}
-
-pub struct IterBorrow<'a, T> {
-    next: Option<&'a Node<T>>
-}
-
-impl<'a, T> Iterator for IterBorrow<'a, T> {
-    type Item = &'a T;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next.map(|node| {
-            self.next = node.next.as_deref();
-            &node.payload
-        })
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter { next: self.head.as_deref() }
     }
 }
 
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
         let mut head = self.head.take();
+
         while let Some(node) = head {
             if let Ok(mut node) = Rc::try_unwrap(node) {
                 head = node.next.take();
@@ -71,6 +60,20 @@ impl<T> Drop for List<T> {
                 break;
             }
         }
+    }
+}
+
+pub struct Iter<'a, T> {
+    next: Option<&'a Node<T>>
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next.map(|node| {
+            self.next = node.next.as_deref();
+            &node.payload
+        })
     }
 }
 
@@ -98,5 +101,15 @@ mod test {
         // Make sure empty tail works
         let list = list.tail();
         assert_eq!(list.head(), None);
+    }
+
+    #[test]
+    fn iter() {
+        let list = List::new().prepend(1).prepend(2).prepend(3);
+
+        let mut iter = list.iter();
+        assert_eq!(iter.next(), Some(&3));
+        assert_eq!(iter.next(), Some(&2));
+        assert_eq!(iter.next(), Some(&1));
     }
 }

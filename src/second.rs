@@ -1,76 +1,76 @@
-#[derive(Debug)]
-pub struct List<T: std::fmt::Debug> {
+pub struct List<T> {
     head: Link<T>,
 }
 
 type Link<T> = Option<Box<Node<T>>>;
 
-#[derive(Debug)]
-pub struct Node<T> {
-    payload: T,
-    next: Link<T>
+struct Node<T> {
+    elem: T,
+    next: Link<T>,
 }
 
-impl<T> Node<T> {
-    fn new(next: Link<T>, value: T) -> Node<T> {
-        Node { payload: value, next }
-    }
-}
-
-impl<T> List<T> 
-where
-    T: std::fmt::Debug
-{
-    fn new() -> Self {
+impl<T> List<T> {
+    pub fn new() -> Self {
         List { head: None }
     }
 
-    fn push(&mut self, value: T) {
-        let new_node = Node::new(self.head.take(), value);
-        self.head = Some(Box::new(new_node));
+    pub fn push(&mut self, elem: T) {
+        let new_node = Box::new(Node {
+            elem: elem,
+            next: self.head.take(),
+        });
+
+        self.head = Some(new_node);
     }
 
-    fn pop(&mut self) -> Option<T> {
+    pub fn pop(&mut self) -> Option<T> {
         self.head.take().map(|node| {
             self.head = node.next;
-            node.payload
+            node.elem
         })
     }
 
-    fn peek(&self) -> Option<&T> {
-        self.head.as_ref().take().map(|node| {
-            &node.payload
+    pub fn peek(&self) -> Option<&T> {
+        self.head.as_ref().map(|node| {
+            &node.elem
         })
     }
 
-    fn peek_mut(&mut self) -> Option<&mut T> {
-        self.head.as_mut().take().map(|node| {
-            &mut node.payload
+    pub fn peek_mut(&mut self) -> Option<&mut T> {
+        self.head.as_mut().map(|node| {
+            &mut node.elem
         })
     }
 
-    fn iter(&self) -> Iter<'_, T> {
+    pub fn into_iter(self) -> IntoIter<T> {
+        IntoIter(self)
+    }
+
+    pub fn iter(&self) -> Iter<'_, T> {
         Iter { next: self.head.as_deref() }
     }
 
-    fn into_iter(self) -> IntoIter<T> {
-       IntoIter(self)
-    }
-
-    fn iter_mut(&mut self) -> IterMut<'_, T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut { next: self.head.as_deref_mut() }
     }
 }
 
-impl<T> Drop for List<T>
-where
-    T: std::fmt::Debug
-{
+impl<T> Drop for List<T> {
     fn drop(&mut self) {
-        let mut curr = self.head.take();
-        while let Some(mut boxed_node) = curr {
-            curr = boxed_node.next.take();
+        let mut cur_link = self.head.take();
+        while let Some(mut boxed_node) = cur_link {
+            cur_link = boxed_node.next.take();
         }
+    }
+}
+
+pub struct IntoIter<T>(List<T>);
+
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        // access fields of a tuple struct numerically
+        self.0.pop()
     }
 }
 
@@ -78,14 +78,12 @@ pub struct Iter<'a, T> {
     next: Option<&'a Node<T>>,
 }
 
-
-// iterator implementation for iter func
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = &'a T;
     fn next(&mut self) -> Option<Self::Item> {
         self.next.map(|node| {
             self.next = node.next.as_deref();
-            &node.payload
+            &node.elem
         })
     }
 }
@@ -94,32 +92,16 @@ pub struct IterMut<'a, T> {
     next: Option<&'a mut Node<T>>,
 }
 
-
-// iterator implementation for iter_mut func
 impl<'a, T> Iterator for IterMut<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next.take().map(|node| {
             self.next = node.next.as_deref_mut();
-            &mut node.payload
+            &mut node.elem
         })
     }
 }
-
-
-pub struct IntoIter<T: std::fmt::Debug>(List<T>);
-
-impl<T> Iterator for IntoIter<T>
-where
-    T: std::fmt::Debug
-{
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop()
-    }
-}
-
 
 #[cfg(test)]
 mod test {
